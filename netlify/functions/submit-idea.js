@@ -456,7 +456,7 @@ function slugify(text = "") {
     .replace(/(^-|-$)/g, "");
 }
 
-// 🔥 REQUIRED by Webflow v2
+// REQUIRED by Webflow v2
 function sha1(buffer) {
   return crypto.createHash("sha1").update(buffer).digest("hex");
 }
@@ -472,7 +472,12 @@ async function webflowRequest(path, method, token, body) {
   });
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
 
   if (!res.ok) {
     throw new Error(`Webflow API ${res.status}: ${JSON.stringify(data)}`);
@@ -544,14 +549,14 @@ exports.handler = async (event) => {
         const chunks = [];
         let size = 0;
 
-        file.on("data", (data) => {
-          size += data.length;
+        file.on("data", (d) => {
+          size += d.length;
           if (size > MAX_SIZE) {
             reject(new Error("File exceeds 1MB"));
             file.resume();
             return;
           }
-          chunks.push(data);
+          chunks.push(d);
         });
 
         file.on("end", () => {
@@ -583,21 +588,25 @@ exports.handler = async (event) => {
         fileName,
         contentType: fileType,
         fileSize: fileBuffer.length,
-        fileHash: sha1(fileBuffer) // 🔥 FIX
+        fileHash: sha1(fileBuffer)
       }
     );
 
-    const { uploadUrl, uploadHeaders, assetUrl } = assetInit;
-
     /* ---------- 2. UPLOAD FILE ---------- */
-    const uploadRes = await fetch(uploadUrl, {
+    const uploadHeaders = {
+      ...assetInit.uploadHeaders,
+      "Content-Length": fileBuffer.length
+    };
+
+    const uploadRes = await fetch(assetInit.uploadUrl, {
       method: "PUT",
-      headers: uploadHeaders, // 🔥 MUST USE
+      headers: uploadHeaders,
       body: fileBuffer
     });
 
     if (!uploadRes.ok) {
-      throw new Error("Image upload failed");
+      const text = await uploadRes.text();
+      throw new Error(`Image upload failed: ${uploadRes.status} ${text}`);
     }
 
     /* ---------- 3. CREATE CMS ITEM ---------- */
@@ -606,11 +615,11 @@ exports.handler = async (event) => {
     const cmsFields = {
       name: title,
       slug: `${slugify(title)}-${Date.now()}`,
-      [CMS_IMAGE_FIELD_API_NAME]: { url: assetUrl }
+      [CMS_IMAGE_FIELD_API_NAME]: { url: assetInit.assetUrl }
     };
 
     if (fields.description) {
-      cmsFields.description = fields.description;
+      cmsFields["description"] = fields.description; // update API name if needed
     }
 
     const cmsItem = await webflowRequest(
@@ -626,10 +635,7 @@ exports.handler = async (event) => {
     return response(200, { success: true, item: cmsItem });
 
   } catch (error) {
-    console.error("ERROR:", error);
+    console.error("FUNCTION ERROR:", error);
     return response(500, { error: error.message });
   }
 };
-
-
-
