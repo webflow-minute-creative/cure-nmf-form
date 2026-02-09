@@ -428,11 +428,9 @@ exports.handler = async (event) => {
 
 
 
-const Busboy = require("busboy");
+/*const Busboy = require("busboy");
 const crypto = require("crypto");
 const fetch = require("node-fetch");
-
-/* ---------------- HELPERS ---------------- */
 
 function response(statusCode, data) {
   return {
@@ -486,7 +484,6 @@ async function webflowRequest(path, method, token, body) {
   return data;
 }
 
-/* ---------------- NETLIFY HANDLER ---------------- */
 
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
@@ -579,7 +576,6 @@ exports.handler = async (event) => {
       return response(400, { error: "Image is required" });
     }
 
-    /* ---------- 1. INIT WEBFLOW ASSET ---------- */
     const assetInit = await webflowRequest(
       `/sites/${WEBFLOW_SITE_ID}/assets`,
       "POST",
@@ -592,7 +588,6 @@ exports.handler = async (event) => {
       }
     );
 
-    /* ---------- 2. UPLOAD FILE ---------- */
     const uploadHeaders = {
       ...assetInit.uploadHeaders,
       "Content-Length": fileBuffer.length
@@ -609,7 +604,6 @@ exports.handler = async (event) => {
       throw new Error(`Image upload failed: ${uploadRes.status} ${text}`);
     }
 
-    /* ---------- 3. CREATE CMS ITEM ---------- */
     const title = fields.title || fields.name || "New Item";
 
     const cmsFields = {
@@ -638,4 +632,101 @@ exports.handler = async (event) => {
     console.error("FUNCTION ERROR:", error);
     return response(500, { error: error.message });
   }
+}; */
+
+
+
+
+
+const Busboy = require("busboy");
+const fetch = require("node-fetch");
+const crypto = require("crypto");
+
+exports.handler = async (event) => {
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: "Method Not Allowed" };
+  }
+
+  const busboy = Busboy({ headers: event.headers });
+  const fields = {};
+  let imageBuffer = null;
+  let imageFilename = "";
+
+  busboy.on("field", (fieldname, val) => {
+    fields[fieldname] = val;
+  });
+
+  busboy.on("file", (fieldname, file, filename) => {
+    imageFilename = filename;
+    const chunks = [];
+    file.on("data", (data) => chunks.push(data));
+    file.on("end", () => {
+      imageBuffer = Buffer.concat(chunks);
+    });
+  });
+
+  busboy.on("finish", async () => {
+    try {
+      /* Upload to Cloudinary */
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = crypto
+        .createHash("sha1")
+        .update(
+          `timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`
+        )
+        .digest("hex");
+
+      const formData = new FormData();
+      formData.append("file", imageBuffer, imageFilename);
+      formData.append("api_key", process.env.CLOUDINARY_API_KEY);
+      formData.append("timestamp", timestamp);
+      formData.append("signature", signature);
+
+      const cloudinaryRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: formData }
+      );
+
+      const cloudinaryData = await cloudinaryRes.json();
+
+      /* Create CMS Item */
+      const cmsPayload = {
+        fields: {
+          name: fields.name,
+          "upload-image": {
+            url: cloudinaryData.secure_url,
+          },
+          email: fields.email,
+          message: fields.message,
+          _archived: false,
+          _draft: false,
+        },
+      };
+
+      await fetch(
+        `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.WEBFLOW_API_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(cmsPayload),
+        }
+      );
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ success: true }),
+      };
+    } catch (err) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: err.message }),
+      };
+    }
+  });
+
+  busboy.end(Buffer.from(event.body, "base64"));
 };
+
