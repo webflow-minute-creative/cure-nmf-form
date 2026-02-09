@@ -709,33 +709,31 @@ exports.handler = async (event) => {
            2️⃣ Create Webflow CMS Item
         ========================== */
 const cmsPayload = {
-  fieldData: {
-    name: fields["Tittel"] || "Uten tittel",
-
-    slug: (fields["Tittel"] || "uten-tittel")
+  fields: {
+    name: fields.Tittel, // required
+    slug: fields.Tittel
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-"),
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, ""),
 
-    "forslags-description": fields["Oppsummering"] || "",
-
-    "forslags-body-text": {
-      html: `<p>${fields["Lang-beskrivelse"] || ""}</p>`
-    },
-
-    "forslags-for-text": fields["Hvordan-gjennomf-re"] || "",
-
-    "forslags-hvem-text": fields["Navn-korps-innsender"] || "",
+    "forslags-description": fields.Oppsummering,
+    "forslags-body-text": fields["Lang-beskrivelse"],
+    "forslags-hvem-text": fields["Navn-korps-innsender"],
+    "forslags-for-text": fields["E-post-korps-innsender"],
+    "forslags-hva-text": fields["Hvordan-gjennomf-re"] || "",
 
     "forslags-image": {
       url: cloudinaryData.secure_url
     },
 
-    "forslags-likes-count": 0
-  },
+    "forslags-likes-count": 0,
+    date: new Date().toISOString(),
 
-  isDraft: true,
-  isArchived: false
+    _archived: false,
+    _draft: true // keep draft until reviewed
+  }
 };
+
 
 
 const webflowRes = await fetch(
