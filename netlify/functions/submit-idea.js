@@ -705,17 +705,28 @@ exports.handler = async (event) => {
         /* 🔹 Create Webflow CMS Item */
 const cmsPayload = {
   fields: {
-    name: fields.Tittel,
-    oppsummering: fields.Oppsummering,
-    "lang-beskrivelse": fields["Lang-beskrivelse"],
-    "navn-korps-innsender": fields["Navn-korps-innsender"],
-    "e-post-korps-innsender": fields["E-post-korps-innsender"],
-    "upload-image": {
-      url: cloudinaryData.secure_url,
+    name: fields.Tittel, // required
+    slug: fields.Tittel
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, ""),
+
+    "forslags-description": fields.Oppsummering,
+    "forslags-body-text": fields["Lang-beskrivelse"],
+    "forslags-hvem-text": fields["Navn-korps-innsender"],
+    "forslags-for-text": fields["E-post-korps-innsender"],
+    "forslags-hva-text": fields["Hvordan-gjennomf-re"] || "",
+
+    "forslags-image": {
+      url: cloudinaryData.secure_url
     },
+
+    "forslags-likes-count": 0,
+    date: new Date().toISOString(),
+
     _archived: false,
-    _draft: true
-  },
+    _draft: true // keep draft until reviewed
+  }
 };
 
         await fetch(
