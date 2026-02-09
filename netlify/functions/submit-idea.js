@@ -643,7 +643,7 @@ const crypto = require("crypto");
 const FormData = require("form-data");
 
 exports.handler = async (event) => {
-  // ✅ Allow only POST
+  // Allow only POST
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -655,14 +655,16 @@ exports.handler = async (event) => {
     const busboy = Busboy({ headers: event.headers });
     const fields = {};
     let imageBuffer = null;
-    let imageFilename = "";
+    let imageFilename = "upload.jpg";
 
-    busboy.on("field", (fieldname, val) => {
-      fields[fieldname] = val;
+    // Capture text fields
+    busboy.on("field", (fieldname, value) => {
+      fields[fieldname] = value;
     });
 
-    busboy.on("file", (fieldname, file, filename) => {
-      imageFilename = filename;
+    // Capture file
+    busboy.on("file", (fieldname, file, info) => {
+      imageFilename = info?.filename || "upload.jpg";
       const chunks = [];
 
       file.on("data", (data) => chunks.push(data));
@@ -673,13 +675,17 @@ exports.handler = async (event) => {
 
     busboy.on("finish", async () => {
       try {
-        /* 🔹 Upload to Cloudinary */
+        /* ==========================
+           1️⃣ Upload image to Cloudinary
+        ========================== */
+        if (!imageBuffer) {
+          throw new Error("No image uploaded");
+        }
+
         const timestamp = Math.floor(Date.now() / 1000);
         const signature = crypto
           .createHash("sha1")
-          .update(
-            `timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`
-          )
+          .update(`timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`)
           .digest("hex");
 
         const formData = new FormData();
@@ -690,10 +696,7 @@ exports.handler = async (event) => {
 
         const cloudinaryRes = await fetch(
           `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload`,
-          {
-            method: "POST",
-            body: formData,
-          }
+          { method: "POST", body: formData }
         );
 
         const cloudinaryData = await cloudinaryRes.json();
@@ -702,61 +705,77 @@ exports.handler = async (event) => {
           throw new Error("Cloudinary upload failed");
         }
 
-        /* 🔹 Create Webflow CMS Item */
-const cmsPayload = {
-  fields: {
-    name: fields.Tittel, // required
-    slug: fields.Tittel
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, ""),
+        /* ==========================
+           2️⃣ Create Webflow CMS Item
+        ========================== */
+        const cmsPayload = {
+          fields: {
+            name: fields["Tittel"] || "Uten tittel",
 
-    "forslags-description": fields.Oppsummering,
-    "forslags-body-text": fields["Lang-beskrivelse"],
-    "forslags-hvem-text": fields["Navn-korps-innsender"],
-    "forslags-for-text": fields["E-post-korps-innsender"],
-    "forslags-hva-text": fields["Hvordan-gjennomf-re"] || "",
+            "forslags-description": fields["Oppsummering"] || "",
 
-    "forslags-image": {
-      url: cloudinaryData.secure_url
-    },
+            "forslags-body-text": {
+              html: `<p>${fields["Lang-beskrivelse"] || ""}</p>`
+            },
 
-    "forslags-likes-count": 0,
-    date: new Date().toISOString(),
+            "forslags-for-text": fields["Hvordan-gjennomf-re"] || "",
+            "forslags-hvem-text": fields["Navn-korps-innsender"] || "",
 
-    _archived: false,
-    _draft: true // keep draft until reviewed
-  }
-};
+            "forslags-image": {
+              url: cloudinaryData.secure_url
+            },
 
-        await fetch(
+            "forslags-likes-count": 0,
+
+            _archived: false,
+            _draft: true
+          }
+        };
+
+        const webflowRes = await fetch(
           `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`,
           {
             method: "POST",
             headers: {
               Authorization: `Bearer ${process.env.WEBFLOW_API_TOKEN}`,
               "Content-Type": "application/json",
+              "Accept-Version": "1.0.0"
             },
             body: JSON.stringify(cmsPayload),
           }
         );
+
+        const webflowData = await webflowRes.json();
+
+        if (!webflowRes.ok) {
+          throw new Error(webflowData.message || "Webflow CMS error");
+        }
 
         resolve({
           statusCode: 200,
           headers: {
             "Access-Control-Allow-Origin": "*",
           },
-          body: JSON.stringify({ success: true }),
+          body: JSON.stringify({
+            success: true,
+            webflowItemId: webflowData.id
+          }),
         });
-      } catch (err) {
+
+      } catch (error) {
         resolve({
           statusCode: 500,
-          body: JSON.stringify({ error: err.message }),
+          body: JSON.stringify({
+            success: false,
+            error: error.message
+          }),
         });
       }
     });
 
+    // Required for Netlify (base64 body)
     busboy.end(Buffer.from(event.body, "base64"));
   });
 };
+
 
