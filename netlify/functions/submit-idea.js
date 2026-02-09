@@ -756,10 +756,18 @@ console.log("WEBFLOW STATUS:", webflowRes.status);
 console.log("WEBFLOW RESPONSE:", webflowText);
 
 if (!webflowRes.ok) {
-  return response(400, {
+resolve({
+  statusCode: 400,
+  headers: {
+    "Access-Control-Allow-Origin": "*"
+  },
+  body: JSON.stringify({
     success: false,
     error: webflowText
-  });
+  })
+});
+return;
+
 }
 
 
