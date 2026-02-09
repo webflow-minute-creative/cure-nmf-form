@@ -637,96 +637,113 @@ exports.handler = async (event) => {
 
 
 
-
 const Busboy = require("busboy");
 const fetch = require("node-fetch");
 const crypto = require("crypto");
+const FormData = require("form-data");
 
 exports.handler = async (event) => {
+  // ✅ Allow only POST
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return {
+      statusCode: 405,
+      body: "Method Not Allowed",
+    };
   }
 
-  const busboy = Busboy({ headers: event.headers });
-  const fields = {};
-  let imageBuffer = null;
-  let imageFilename = "";
+  return new Promise((resolve) => {
+    const busboy = Busboy({ headers: event.headers });
+    const fields = {};
+    let imageBuffer = null;
+    let imageFilename = "";
 
-  busboy.on("field", (fieldname, val) => {
-    fields[fieldname] = val;
-  });
-
-  busboy.on("file", (fieldname, file, filename) => {
-    imageFilename = filename;
-    const chunks = [];
-    file.on("data", (data) => chunks.push(data));
-    file.on("end", () => {
-      imageBuffer = Buffer.concat(chunks);
+    busboy.on("field", (fieldname, val) => {
+      fields[fieldname] = val;
     });
-  });
 
-  busboy.on("finish", async () => {
-    try {
-      /* Upload to Cloudinary */
-      const timestamp = Math.floor(Date.now() / 1000);
-      const signature = crypto
-        .createHash("sha1")
-        .update(
-          `timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`
-        )
-        .digest("hex");
+    busboy.on("file", (fieldname, file, filename) => {
+      imageFilename = filename;
+      const chunks = [];
 
-      const formData = new FormData();
-      formData.append("file", imageBuffer, imageFilename);
-      formData.append("api_key", process.env.CLOUDINARY_API_KEY);
-      formData.append("timestamp", timestamp);
-      formData.append("signature", signature);
+      file.on("data", (data) => chunks.push(data));
+      file.on("end", () => {
+        imageBuffer = Buffer.concat(chunks);
+      });
+    });
 
-      const cloudinaryRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload`,
-        { method: "POST", body: formData }
-      );
+    busboy.on("finish", async () => {
+      try {
+        /* 🔹 Upload to Cloudinary */
+        const timestamp = Math.floor(Date.now() / 1000);
+        const signature = crypto
+          .createHash("sha1")
+          .update(
+            `timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`
+          )
+          .digest("hex");
 
-      const cloudinaryData = await cloudinaryRes.json();
+        const formData = new FormData();
+        formData.append("file", imageBuffer, imageFilename);
+        formData.append("api_key", process.env.CLOUDINARY_API_KEY);
+        formData.append("timestamp", timestamp);
+        formData.append("signature", signature);
 
-      /* Create CMS Item */
-      const cmsPayload = {
-        fields: {
-          name: fields.name,
-          "upload-image": {
-            url: cloudinaryData.secure_url,
-          },
-          email: fields.email,
-          message: fields.message,
-          _archived: false,
-          _draft: false,
-        },
-      };
+        const cloudinaryRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
 
-      await fetch(
-        `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.WEBFLOW_API_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(cmsPayload),
+        const cloudinaryData = await cloudinaryRes.json();
+
+        if (!cloudinaryData.secure_url) {
+          throw new Error("Cloudinary upload failed");
         }
-      );
 
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ success: true }),
-      };
-    } catch (err) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: err.message }),
-      };
-    }
+        /* 🔹 Create Webflow CMS Item */
+        const cmsPayload = {
+          fields: {
+            name: fields.name,
+            email: fields.email,
+            message: fields.message,
+            "upload-image": {
+              url: cloudinaryData.secure_url,
+            },
+            _archived: false,
+            _draft: false,
+          },
+        };
+
+        await fetch(
+          `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.WEBFLOW_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(cmsPayload),
+          }
+        );
+
+        resolve({
+          statusCode: 200,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+          },
+          body: JSON.stringify({ success: true }),
+        });
+      } catch (err) {
+        resolve({
+          statusCode: 500,
+          body: JSON.stringify({ error: err.message }),
+        });
+      }
+    });
+
+    busboy.end(Buffer.from(event.body, "base64"));
   });
-
-  busboy.end(Buffer.from(event.body, "base64"));
 };
 
