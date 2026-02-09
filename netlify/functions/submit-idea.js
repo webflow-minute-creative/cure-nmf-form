@@ -708,42 +708,48 @@ exports.handler = async (event) => {
         /* ==========================
            2️⃣ Create Webflow CMS Item
         ========================== */
-        const cmsPayload = {
-          fields: {
-            name: fields["Tittel"] || "Uten tittel",
+const cmsPayload = {
+  fieldData: {
+    name: fields["Tittel"] || "Uten tittel",
 
-            "forslags-description": fields["Oppsummering"] || "",
+    slug: (fields["Tittel"] || "uten-tittel")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-"),
 
-            "forslags-body-text": {
-              html: `<p>${fields["Lang-beskrivelse"] || ""}</p>`
-            },
+    "forslags-description": fields["Oppsummering"] || "",
 
-            "forslags-for-text": fields["Hvordan-gjennomf-re"] || "",
-            "forslags-hvem-text": fields["Navn-korps-innsender"] || "",
+    "forslags-body-text": {
+      html: `<p>${fields["Lang-beskrivelse"] || ""}</p>`
+    },
 
-            "forslags-image": {
-              url: cloudinaryData.secure_url
-            },
+    "forslags-for-text": fields["Hvordan-gjennomf-re"] || "",
 
-            "forslags-likes-count": 0,
+    "forslags-hvem-text": fields["Navn-korps-innsender"] || "",
 
-            _archived: false,
-            _draft: true
-          }
-        };
+    "forslags-image": {
+      url: cloudinaryData.secure_url
+    },
 
-        const webflowRes = await fetch(
-          `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${process.env.WEBFLOW_API_TOKEN}`,
-              "Content-Type": "application/json",
-              "Accept-Version": "1.0.0"
-            },
-            body: JSON.stringify(cmsPayload),
-          }
-        );
+    "forslags-likes-count": 0
+  },
+
+  isDraft: true,
+  isArchived: false
+};
+
+
+const webflowRes = await fetch(
+  `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.WEBFLOW_API_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(cmsPayload)
+  }
+);
+
 
         const webflowData = await webflowRes.json();
 
