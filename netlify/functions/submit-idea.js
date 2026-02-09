@@ -750,12 +750,18 @@ const webflowRes = await fetch(
   }
 );
 
+const webflowText = await webflowRes.text();
 
-        const webflowData = await webflowRes.json();
+console.log("WEBFLOW STATUS:", webflowRes.status);
+console.log("WEBFLOW RESPONSE:", webflowText);
 
-        if (!webflowRes.ok) {
-          throw new Error(webflowData.message || "Webflow CMS error");
-        }
+if (!webflowRes.ok) {
+  return response(400, {
+    success: false,
+    error: webflowText
+  });
+}
+
 
         resolve({
           statusCode: 200,
