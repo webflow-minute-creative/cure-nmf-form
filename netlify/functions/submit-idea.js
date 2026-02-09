@@ -703,18 +703,20 @@ exports.handler = async (event) => {
         }
 
         /* 🔹 Create Webflow CMS Item */
-        const cmsPayload = {
-          fields: {
-            name: fields.name,
-            email: fields.email,
-            message: fields.message,
-            "upload-image": {
-              url: cloudinaryData.secure_url,
-            },
-            _archived: false,
-            _draft: false,
-          },
-        };
+const cmsPayload = {
+  fields: {
+    name: fields.Tittel,
+    oppsummering: fields.Oppsummering,
+    "lang-beskrivelse": fields["Lang-beskrivelse"],
+    "navn-korps-innsender": fields["Navn-korps-innsender"],
+    "e-post-korps-innsender": fields["E-post-korps-innsender"],
+    "upload-image": {
+      url: cloudinaryData.secure_url,
+    },
+    _archived: false,
+    _draft: true
+  },
+};
 
         await fetch(
           `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`,
